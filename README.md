@@ -4,6 +4,13 @@ This project is a Python script for automatically collecting panoramic images fr
 
 The project is designed to create datasets for computer vision tasks, such as analyzing road conditions, the urban environment, and more.
 
+[![Python](https://img.shields.io/badge/Python-3.7%2B-blue?logo=python)](https://www.python.org/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-✓-green?logo=opencv)](https://opencv.org/)
+[![NumPy](https://img.shields.io/badge/NumPy-✓-informational?logo=numpy)](https://numpy.org/)
+[![Folium](https://img.shields.io/badge/Folium-✓-orange?logo=leaflet)](https://python-visualization.github.io/folium/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+
 ---
 
 ## 🚀 Key Features
