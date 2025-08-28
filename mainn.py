@@ -5,33 +5,28 @@ import time
 import cv2
 import pickle
 import argparse
-import shutil
 from streetlevel import yandex
 from datetime import datetime
 from typing import Optional, List
 from PIL import Image
 import imagehash
 import numpy as np
+from py360convert import e2p # NEW ROI: Возвращаем импорт для проекций
 
 # ==============================================================================
 # КОНФИГУРАЦИЯ
 # ==============================================================================
-
-# --- Основные пути ---
+# ... (блок без изменений) ...
 INPUT_CSV = "almaty_roads.csv"
 OUTPUT_DIR_BASE = "output"
 TEMP_DIR = "temp_panoramas"
-
-# --- Параметры поиска ---
-TIME_DELAY = 1.0  #Задержка между запросами к API
+TIME_DELAY = 1.0
 
 # ==============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ==============================================================================
-
+# ... (функции transliterate, fix_encoding, get_date_from_pano_id, autocrop_image без изменений) ...
 def transliterate(string: str) -> str:
-    """Транслитерирует строку с кириллицы на латиницу для создания безопасных имен файлов."""
-    # ... (код функции без изменений) ...
     cyrillic_to_latin = {
         'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'E', 'Ж': 'Zh', 'З': 'Z', 'И': 'I',
         'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T',
@@ -44,25 +39,18 @@ def transliterate(string: str) -> str:
         'Ө': 'O', 'ө': 'o', 'Ұ': 'U', 'ұ': 'u', 'Ү': 'U', 'ү': 'u', 'Һ': 'H', 'һ': 'h', 'І': 'I', 'і': 'i'
     }
     return ''.join(cyrillic_to_latin.get(char, char) for char in string)
-
-
 def fix_encoding(s: str) -> str:
-    """Исправляет проблемы с кодировкой, часто встречающиеся в CSV."""
     if not isinstance(s, str) or not s: return s
     try: return s.encode("cp1251").decode("utf-8")
     except Exception: return s
-
 def get_date_from_pano_id(pano_id: str) -> Optional[datetime]:
-    """Извлекает дату из ID панорамы, который является Unix timestamp."""
     parts = pano_id.split("_");
     if not parts: return None
     try:
         return datetime.utcfromtimestamp(int(parts[-1]))
     except (ValueError, IndexError, TypeError):
         return None
-
 def autocrop_image(img: np.ndarray) -> np.ndarray:
-    """Обрезает пустые (почти белые или почти черные) края у изображения."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     mask = cv2.inRange(gray, 10, 245)
     coords = cv2.findNonZero(mask)
@@ -73,20 +61,46 @@ def autocrop_image(img: np.ndarray) -> np.ndarray:
         print("   -> Автообрезка дала нулевой размер, используется исходное изображение.")
         return img
     return img[y:y+h, x:x+w]
+    
+# NEW ROI: Функция для нарезки панорамы на виды "вперед" и "назад"
+def crop_panorama_to_roi(img: np.ndarray, year: str) -> List[dict]:
+    """
+    Принимает панораму, нарезает ее на перспективные виды (вперед/назад)
+    и возвращает список словарей, каждый из которых содержит вид и его название.
+    """
+    # Здесь можно хранить профили обрезки для разных лет, как мы делали раньше
+    profiles = {
+        "default": {"v_deg": -20, "top_frac": 0.5, "end_frac": 1.0, "sub_crop": 0.3},
+        "2017": {"v_deg": -7, "top_frac": 0.4, "end_frac": 0.9, "sub_crop": 0.1}
+    }
+    profile = profiles.get(year, profiles["default"])
+    
+    output_views = []
+    
+    for yaw, view_label in [(180, "front"), (0, "back")]:
+        view = e2p(img, fov_deg=70, u_deg=yaw, v_deg=profile["v_deg"], out_hw=(1536, 1536))
+        h, _, _ = view.shape
+        
+        top_px = int(h * profile["top_frac"])
+        end_px = int(h * profile["end_frac"])
+        primary_crop = view[top_px:end_px, :, :]
+        
+        h_sub, _, _ = primary_crop.shape
+        sub_crop_px = int(h_sub * profile["sub_crop"])
+        final_crop = primary_crop[sub_crop_px:, :, :]
+        
+        output_views.append({"label": view_label, "image": final_crop})
+        
+    return output_views
 
 # ==============================================================================
 # ГЛАВНЫЙ СКРИПТ
 # ==============================================================================
-
+# ... (функция main() до основного цикла без изменений) ...
 def main():
-    """
-    Основная функция, запускающая процесс сбора панорам.
-    """
-    # --- Парсинг аргументов ---
     parser = argparse.ArgumentParser(description="Сборщик панорам Яндекс по годам.")
     parser.add_argument("year", type=int, nargs='?', default=None, help="Год для обработки (например, 2023). Если не указан, будет запрошен.")
     args = parser.parse_args()
-    
     if args.year:
         YEAR = str(args.year)
     else:
@@ -94,8 +108,6 @@ def main():
     if not YEAR.isdigit() or not (2010 < int(YEAR) < 2030):
         print(f"❌ Некорректный год: {YEAR}. Выход."); exit()
     print(f"🚀 Запускаем обработку для {YEAR} года.")
-
-    # --- Настройка путей ---
     output_dir = os.path.join(OUTPUT_DIR_BASE, YEAR)
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(TEMP_DIR, exist_ok=True)
@@ -103,14 +115,11 @@ def main():
     bad_addresses_file = os.path.join(output_dir, f"no_panorama_addresses_{YEAR}.csv")
     state_path = os.path.join(output_dir, "state.pkl")
     cache_path = os.path.join(TEMP_DIR, "panorama_cache.pkl")
-    
-    # --- Инициализация логов ---
     if not os.path.exists(log_file):
         with open(log_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["ID", "ObjectID", "PanoID", "RoadName", "Latitude", "Longitude", "YearFound", "FilePath", "PanoramaDate"])
-
-    # --- Загрузка состояния ---
+            # NEW ROI: Возвращаем колонку View в лог
+            writer.writerow(["ID", "ObjectID", "PanoID", "RoadName", "Latitude", "Longitude", "YearFound", "View", "FilePath", "PanoramaDate"])
     try:
         with open(cache_path, "rb") as f: panorama_cache = pickle.load(f)
     except (FileNotFoundError, EOFError): panorama_cache = {}
@@ -120,13 +129,11 @@ def main():
     except (FileNotFoundError, EOFError):
         state = { 'processed_coords': set(), 'image_hashes': set(), 'stats': {'total_duration_seconds': 0.0} }
         print(f"ℹ️ Файл состояния для {YEAR} года не найден, будет создан новый.")
-
     processed_coords = state['processed_coords']
     image_hashes = state['image_hashes']
     stats = state['stats']
     print(f"-> Обработанных координат: {len(processed_coords)}")
     print(f"-> Уникальных изображений: {len(image_hashes)}")
-
     logged_pano_ids = set()
     global_id = 0
     try:
@@ -140,8 +147,6 @@ def main():
         print(f"✅ Найдено {len(logged_pano_ids)} уже обработанных панорам в логе. Начальный ID: {global_id}")
     except FileNotFoundError:
         print("ℹ️ Лог-файл не найден, начинаем с нуля.")
-
-    # --- Чтение исходных данных ---
     all_roads_data = []
     with open(INPUT_CSV, mode="r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -156,13 +161,10 @@ def main():
     if not all_roads_data:
         print("⚠️ После чтения almaty_roads.csv не найдено ни одного валидного адреса."); exit(1)
     print(f"Найдено {len(all_roads_data)} дорожных сегментов для обработки.")
-    
-    # --- Основной цикл ---
     print(">>> СТАРТ основного цикла обработки улиц")
     start_time = time.time()
     streets_processed_this_session, coords_processed_this_session = 0, 0
     total_coords_in_file = sum(len(road['path']) for road in all_roads_data)
-    
     try:
         for road in all_roads_data:
             road_name, object_id, segment_path = road['name'], road['object_id'], road['path']
@@ -204,7 +206,6 @@ def main():
                             pano_to_process = found_pano_for_year
                     else:
                         print(f"   ℹ️ Панорамы за {YEAR} год не найдены для этой точки.")
-
                 except StopIteration as e: print(f"   {e}")
                 except Exception as e:
                     if "Expecting value" in str(e): print(f"   ℹ️ API Яндекса вернул некорректный ответ. Пропускаем точку.")
@@ -220,23 +221,32 @@ def main():
                     
                     img = cv2.imread(raw_path)
                     if img is not None:
-                        cropped_img = autocrop_image(img)
-                        pil_img = Image.fromarray(cv2.cvtColor(cropped_img, cv2.COLOR_BGR2RGB))
-                        h_hash = imagehash.phash(pil_img)
+                        # NEW ROI: Вызываем новую функцию для нарезки
+                        views_to_save = crop_panorama_to_roi(img, YEAR)
 
-                        if h_hash in image_hashes:
-                            print(f"   ℹ️ Дубликат панорамы (такое же изображение уже сохранено).")
-                        else:
-                            current_id = global_id + 1
-                            filename = f"{YEAR}_{current_id:05d}_{sanitized_name}.jpg"
-                            filepath = os.path.join(output_dir, filename)
-                            cv2.imwrite(filepath, cropped_img)
+                        for view_data in views_to_save:
+                            view_label = view_data["label"]
+                            view_image = view_data["image"]
                             
-                            global_id, image_hashes.add(h_hash), logged_pano_ids.add(pano.id)
-                            with open(log_file, "a", newline="", encoding="utf-8") as f_log:
-                                writer = csv.writer(f_log)
-                                writer.writerow([global_id, object_id, pano.id, road_name, pano.lat, pano.lon, YEAR, filepath, pano_date.strftime("%Y-%m-%d %H:%M:%S")])
-                            print(f"   💾 Сохранена панорама (автообрезка): {filepath}")
+                            pil_img = Image.fromarray(cv2.cvtColor(view_image, cv2.COLOR_BGR2RGB))
+                            h_hash = imagehash.phash(pil_img)
+
+                            if h_hash in image_hashes:
+                                print(f"   ℹ️ Дубликат вида '{view_label}'. Пропускаем.")
+                                continue
+                            
+                            current_id = global_id + 1
+                            filename = f"{YEAR}_{current_id:05d}_{sanitized_name}_{view_label}.jpg"
+                            filepath = os.path.join(output_dir, filename)
+                            
+                            if cv2.imwrite(filepath, view_image):
+                                global_id = current_id
+                                image_hashes.add(h_hash)
+                                logged_pano_ids.add(pano.id) # Добавляем основной ID, чтобы не обрабатывать панораму заново
+                                with open(log_file, "a", newline="", encoding="utf-8") as f_log:
+                                    writer = csv.writer(f_log)
+                                    writer.writerow([global_id, object_id, pano.id, road_name, pano.lat, pano.lon, YEAR, view_label, filepath, pano_date.strftime("%Y-%m-%d %H:%M:%S")])
+                                print(f"   💾 Сохранен вид '{view_label}': {filepath}")
                     else:
                         print(f"   × Ошибка чтения изображения из кэша: {raw_path}")
                 else:
@@ -251,6 +261,7 @@ def main():
     except KeyboardInterrupt:
         print("\n\n❗️ Процесс прерван пользователем.")
     finally:
+        # ... (блок finally без изменений) ...
         print("\n>>> ЗАВЕРШЕНИЕ РАБОТЫ...")
         session_duration_seconds = time.time() - start_time
         stats['total_duration_seconds'] += session_duration_seconds
@@ -261,7 +272,6 @@ def main():
         with open(cache_path, "wb") as f_cache: pickle.dump(panorama_cache, f_cache)
         print("   -> Финальное состояние сохранено.")
         
-        #блок вывода статистики
         m, s = divmod(session_duration_seconds, 60)
         h, m = divmod(m, 60)
         session_duration_formatted = f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
@@ -277,6 +287,7 @@ def main():
         print(f"🖼️  Сохранено фото (всего):     {global_id}")
         print("-" * 50)
         print(">>> ФИНИШ")
+
 
 if __name__ == "__main__":
     main()
