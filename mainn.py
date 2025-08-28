@@ -11,12 +11,11 @@ from typing import Optional, List
 from PIL import Image
 import imagehash
 import numpy as np
-from py360convert import e2p # NEW ROI: Возвращаем импорт для проекций
+from py360convert import e2p
 
 # ==============================================================================
 # КОНФИГУРАЦИЯ
 # ==============================================================================
-# ... (блок без изменений) ...
 INPUT_CSV = "almaty_roads.csv"
 OUTPUT_DIR_BASE = "output"
 TEMP_DIR = "temp_panoramas"
@@ -25,7 +24,6 @@ TIME_DELAY = 1.0
 # ==============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ==============================================================================
-# ... (функции transliterate, fix_encoding, get_date_from_pano_id, autocrop_image без изменений) ...
 def transliterate(string: str) -> str:
     cyrillic_to_latin = {
         'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'E', 'Ж': 'Zh', 'З': 'Z', 'И': 'I',
@@ -62,7 +60,7 @@ def autocrop_image(img: np.ndarray) -> np.ndarray:
         return img
     return img[y:y+h, x:x+w]
     
-# NEW ROI: Функция для нарезки панорамы на виды "вперед" и "назад"
+#Функция для нарезки панорамы на виды "вперед" и "назад"
 def crop_panorama_to_roi(img: np.ndarray, year: str) -> List[dict]:
     """
     Принимает панораму, нарезает ее на перспективные виды (вперед/назад)
@@ -96,7 +94,6 @@ def crop_panorama_to_roi(img: np.ndarray, year: str) -> List[dict]:
 # ==============================================================================
 # ГЛАВНЫЙ СКРИПТ
 # ==============================================================================
-# ... (функция main() до основного цикла без изменений) ...
 def main():
     parser = argparse.ArgumentParser(description="Сборщик панорам Яндекс по годам.")
     parser.add_argument("year", type=int, nargs='?', default=None, help="Год для обработки (например, 2023). Если не указан, будет запрошен.")
@@ -291,3 +288,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
