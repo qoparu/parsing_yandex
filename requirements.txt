@@ -4,5 +4,4 @@ Pillow
 imagehash
 numpy
 folium
-
 argparse
