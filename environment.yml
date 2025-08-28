@@ -1,0 +1,14 @@
+name: parsing-yandex-env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - opencv
+  - pillow
+  - numpy
+  - folium
+  - pip
+  - pip:
+    - streetlevel
+    - imagehash
