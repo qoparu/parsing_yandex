@@ -52,8 +52,8 @@ The project is designed to create datasets for computer vision tasks, such as an
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your_repository_address>
-    cd <repository_folder_name>
+    git clone https://github.com/qoparu/parsing_yandex.git
+    cd parsing_yandex
     ```
 
 2.  **Create and activate a virtual environment:**
